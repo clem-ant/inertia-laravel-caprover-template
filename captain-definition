@@ -1,5 +1,11 @@
  {
   "schemaVersion" :2 ,
-  "dockerfilePath" : "./.deploy/Dockerfile"
+  "dockerfilePath" : "./.deploy/Dockerfile",
+   "nginxConfig": {
+    "clientMaxBodySize": "128k",
+    "proxyBufferSize": "128k",
+    "proxyBuffers": "4 256k",
+    "proxyBusyBuffersSize": "256k"
+  }
  }
 
