@@ -1,4 +1,13 @@
-ARG PHP_VERSION=${PHP_VERSION:-7.4}
+ARG PHP_VERSION=${PHP_VERSION:-8.3}
+
+# Node.js build stage
+FROM node:20-alpine AS node-build
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
 FROM php:${PHP_VERSION}-fpm-alpine AS php-system-setup
 
 # Install system dependencies
@@ -6,7 +15,7 @@ RUN apk add --no-cache dcron busybox-suid libcap curl zip unzip git
 
 # Install PHP extensions
 COPY --from=mlocati/php-extension-installer /usr/bin/install-php-extensions /usr/bin/
-RUN install-php-extensions intl bcmath gd pdo_mysql pdo_pgsql opcache redis uuid exif pcntl zip
+RUN install-php-extensions intl bcmath gd pdo_mysql pdo_pgsql opcache redis uuid exif pcntl zip curl json mbstring xml tokenizer ctype fileinfo
 
 # Install supervisord implementation
 COPY --from=ochinchina/supervisord:latest /usr/local/bin/supervisord /usr/local/bin/supervisord
@@ -17,6 +26,7 @@ RUN setcap 'cap_net_bind_service=+ep' /usr/local/bin/caddy
 
 # Install composer
 COPY --from=composer/composer:2 /usr/bin/composer /usr/local/bin/composer
+
 
 FROM php-system-setup AS app-setup
 
@@ -39,12 +49,20 @@ RUN chown -R $NON_ROOT_USER:$NON_ROOT_GROUP /etc/crontabs/$NON_ROOT_USER && setc
 COPY composer.json composer.lock ./
 RUN chown -R $NON_ROOT_USER:$NON_ROOT_GROUP $LARAVEL_PATH
 USER $NON_ROOT_USER
-RUN composer install --prefer-dist --no-scripts --no-dev --no-autoloader
+# Installation des dépendances
+RUN composer install --no-interaction --no-dev --no-autoloader --no-scripts --no-cache
+
 RUN rm -rf /home/$NON_ROOT_USER/.composer
 
 # Copy app
 COPY --chown=$NON_ROOT_USER:$NON_ROOT_GROUP . $LARAVEL_PATH/
 COPY ./.deploy/config/php/local.ini /usr/local/etc/php/conf.d/local.ini
+
+# Copy built frontend assets from node-build stage
+COPY --from=node-build --chown=$NON_ROOT_USER:$NON_ROOT_GROUP /app/public/build $LARAVEL_PATH/public/build
+
+# Generate optimized autoloader
+RUN composer dump-autoload --optimize
 
 # Set any ENVs
 ARG APP_KEY=${APP_KEY}
